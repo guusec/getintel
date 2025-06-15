@@ -17,3 +17,7 @@ openintel scraper/parser for creating subdomain wordlists</br>
 getintel -src=umbrella -y=2025 -m=03 -d=14</br>
 getintel -src=tranco -y=2025 -m=06 -d=01 -token=poggers -dir=/media/user/downloads</br>
 getintel -parse</br>
+### todo
+- support for more sources
+- support for day range specification
+- support for parsing more columns
