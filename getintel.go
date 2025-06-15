@@ -77,7 +77,6 @@ func extractURLs(content string, pattern string) []string {
 
 func printHelp() {
 	fmt.Println(`
-
 █████▀███████████████████████████████████████████
 █─▄▄▄▄█▄─▄▄─█─▄─▄─█▄─▄█─▄─▄─█▄─▀█▄─▄█▄─▄▄─█▄─▄███
 █─██▄─██─▄█▀███─████─████─████─█▄▀─███─▄█▀██─██▀█
@@ -337,12 +336,13 @@ func shutdownServer() {
 	}
 }
 
-// worker function for the download queue
+// worker function for the download queue, only sends new downloads when a "spot" is open
 func worker(rpcAddr, rpcToken string, queue <-chan string, wg *sync.WaitGroup, id int) {
 	defer wg.Done()
 	for url := range queue {
 		var gid string
 		var err error
+		// Add only one download at a time
 		for attempt := 1; attempt <= maxRetries; attempt++ {
 			gid, err = sendAddUri(rpcAddr, rpcToken, url, fmt.Sprintf("dl-%d-%d", id, attempt))
 			if err == nil {
@@ -357,7 +357,7 @@ func worker(rpcAddr, rpcToken string, queue <-chan string, wg *sync.WaitGroup, i
 			continue
 		}
 
-		// Wait for this download to finish (and retry polling if error)
+		// Wait for this download to finish
 		for attempt := 1; attempt <= maxRetries; attempt++ {
 			perr := pollDownloadCompletion(rpcAddr, rpcToken, gid)
 			if perr == nil {
@@ -491,7 +491,7 @@ func main() {
 	}
 	log.Printf("Found %d URLs to download", len(allUrls))
 
-	// Download manager: queue with 4 concurrent workers
+	// Limit concurrency: only 4 workers, each does not add a new download until their previous finished
 	queue := make(chan string, len(allUrls))
 	wg := &sync.WaitGroup{}
 	for w := 0; w < maxConcurrentDownloads; w++ {
