@@ -3,6 +3,10 @@ openintel scraper/parser for creating subdomain wordlists</br>
 ### requirements
 - aria2c
 - golang version >= 1.24
+### install
+```
+go install github.com/guusec/getintel@latest
+```
 ### usage
 **-src** specify source for data (umbrella and tranco confirmed to work)</br>
 **-y** specify year</br>
@@ -17,7 +21,12 @@ openintel scraper/parser for creating subdomain wordlists</br>
 getintel -src=umbrella -y=2025 -m=03 -d=14</br>
 getintel -src=tranco -y=2025 -m=06 -d=01 -token=poggers -dir=/media/user/downloads</br>
 getintel -parse</br>
+### remove duplicate domains and trailing periods
+```
+getintel -parse | awk '!x[$0]++' | sed 's/\.$//g'
+```
 ### todo
 - support for more sources
 - support for day range specification
 - support for parsing more columns
+- wordlist creation
