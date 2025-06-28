@@ -18,12 +18,21 @@ go install github.com/guusec/getintel@latest
 **-token** aria2c rpc token (optional for better security)</br>
 **-dir** download directory (optional)</br>
 ### examples
-getintel -src=umbrella -y=2025 -m=03 -d=14</br>
-getintel -src=tranco -y=2025 -m=06 -d=01 -token=poggers -dir=/media/user/downloads</br>
+getintel -src umbrella -y 2025 -m 03 -d 14</br>
+getintel -src tranco -y 2025 -m 06 -d 01 -token poggers -dir /media/user/downloads</br>
 getintel -parse</br>
 ### remove duplicate domains and trailing periods
 ```
 getintel -parse | awk '!x[$0]++' | sed 's/\.$//g'
+```
+### install zsh completions
+```bash
+cd getintel \
+mkdir -p ~/.zsh/completions \
+mv _getintel ~/.zsh/completions \
+chmod a+r ~/.zsh/completions/_getintel \
+fpath=($HOME/.zsh/completions $fpath) \
+autoload -Uz compinit && compinit 
 ```
 ### todo
 - support for more sources
