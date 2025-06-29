@@ -35,7 +35,7 @@ fpath=($HOME/.zsh/completions $fpath) \
 autoload -Uz compinit && compinit 
 ```
 ### todo
-☑️ support for more sources</br>
-☑️ support for day range specification
-- support for parsing more columns
-- wordlist creation
+- [x] support for more sources</br>
+- [x] support for day range specification
+- [ ] support for parsing more columns
+- [ ] wordlist creation
