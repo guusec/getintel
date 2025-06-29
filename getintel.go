@@ -76,7 +76,6 @@ func extractURLs(content string, pattern string) []string {
 	return matches
 }
 
-// banner lol
 func printHelp() {
 	fmt.Println(`
 █████▀███████████████████████████████████████████
@@ -106,6 +105,8 @@ func printHelp() {
 	fmt.Println("        aria2c RPC token (default empty)")
 	fmt.Println("  -dir string")
 	fmt.Println("        Download directory (for aria2c)")
+	fmt.Println("  -l")
+	fmt.Println("        List all generated download URLs given -src and filters (no download)")
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  getintel -src=umbrella -y=2025 -m=03 -d=14")
@@ -196,7 +197,6 @@ func parseParquetFiles() {
 // --- aria2/RPC, worker, and other helper functions here ---
 // These functions are assumed to be unchanged from your original implementation.
 
-// pollDownloadCompletion checks a GID until its status is "complete", "error" or "removed"
 func pollDownloadCompletion(rpcAddr, token, gid string) error {
 	for {
 		status, err := getDownloadStatus(rpcAddr, token, gid)
@@ -420,6 +420,7 @@ func main() {
 	rpcAddr := flag.String("rpc", "http://127.0.0.1:6800/jsonrpc", "aria2c RPC server address")
 	rpcToken := flag.String("token", "", "aria2c RPC token")
 	downloadDir := flag.String("dir", ".", "Download directory")
+	showUrls := flag.Bool("l", false, "List all generated download URLs instead of downloading (with all other provided flags)")
 
 	flag.Parse()
 
@@ -504,6 +505,14 @@ func main() {
 			}
 		}
 		log.Printf("Found %d URLs to download", len(allUrls))
+	}
+
+	if *showUrls {
+		for _, url := range allUrls {
+			fmt.Println(url)
+		}
+		fmt.Printf("\nTotal %d URLs generated\n", len(allUrls))
+		return
 	}
 
 	sigChan := make(chan os.Signal, 1)
