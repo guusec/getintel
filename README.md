@@ -38,4 +38,4 @@ autoload -Uz compinit && compinit
 - [x] support for more sources</br>
 - [x] support for day range specification
 - [ ] support for parsing more columns
-- [ ] wordlist creation
+- [x] wordlist creation
