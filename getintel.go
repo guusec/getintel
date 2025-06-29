@@ -76,6 +76,7 @@ func extractURLs(content string, pattern string) []string {
 	return matches
 }
 
+// banner lol
 func printHelp() {
 	fmt.Println(`
 █████▀███████████████████████████████████████████
