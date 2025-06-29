@@ -17,6 +17,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -78,9 +79,10 @@ func extractURLs(content string, pattern string) []string {
 func printHelp() {
 	fmt.Println(`
 █████▀███████████████████████████████████████████
-█─▄▄▄▄█▄─▄▄─█─▄─▄─█▄─▄█▄─▀█▄─▄█─▄─▄─█▄─▄▄─█▄─▄███
-█─██▄─██─▄█▀███─████─███─█▄▀─████─████─▄█▀██─██▀█
-▀▄▄▄▄▄▀▄▄▄▄▄▀▀▄▄▄▀▀▄▄▄▀▄▄▄▀▀▄▄▀▀▄▄▄▀▀▄▄▄▄▄▀▄▄▄▄▄▀	`)
+█─▄▄▄▄█▄─▄▄─█─▄─▄─█▄─▄█─▄─▄─█▄─▀█▄─▄█▄─▄▄─█▄─▄███
+█─██▄─██─▄█▀███─████─████─████─█▄▀─███─▄█▀██─██▀█
+▀▄▄▄▄▄▀▄▄▄▄▄▀▀▄▄▄▀▀▄▄▄▀▀▄▄▄▀▀▄▄▄▀▀▄▄▀▄▄▄▄▄▀▄▄▄▄▄▀
+	`)
 	fmt.Println("Usage: getintel [options]")
 	fmt.Println("Options:")
 	fmt.Println("  -src string")
@@ -90,7 +92,9 @@ func printHelp() {
 	fmt.Println("  -m string")
 	fmt.Println("        Month for the data (default is 03)")
 	fmt.Println("  -d string")
-	fmt.Println("        Day for the data (optional; start downloading from this day onward)")
+	fmt.Println("        Day for the data: single (e.g. 14) or range (e.g. 01-20)")
+	fmt.Println("  -c string")
+	fmt.Println("        Country code for crux source (e.g. 'global', 'us', 'gb', 'ca', ...)")
 	fmt.Println("  -parse")
 	fmt.Println("        Parse all Parquet files in the current directory and print domain names in response_name column")
 	fmt.Println("  -aria-binary string")
@@ -104,9 +108,42 @@ func printHelp() {
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  getintel -src=umbrella -y=2025 -m=03 -d=14")
-	fmt.Println("  getintel -src=alexa -y=2023 -m=12")
+	fmt.Println("  getintel -src=umbrella -y=2025 -m=03 -d=01-10")
+	fmt.Println("  getintel -src=crux -y=2025 -m=06 -d=27 -c=global")
+	fmt.Println("  getintel -src=crux -y=2025 -m=06 -d=10-15 -c=global")
 	fmt.Println("  getintel -parse")
 	os.Exit(0)
+}
+
+func parseDayRange(day string) []string {
+	var days []string
+	if day == "" {
+		for d := 1; d <= 31; d++ {
+			days = append(days, fmt.Sprintf("%02d", d))
+		}
+		return days
+	}
+	if strings.Contains(day, "-") {
+		parts := strings.SplitN(day, "-", 2)
+		start, err1 := strconv.Atoi(parts[0])
+		end, err2 := strconv.Atoi(parts[1])
+		if err1 != nil || err2 != nil || start < 1 || end > 31 || start > end {
+			fmt.Fprintf(os.Stderr, "Invalid day range: %s\n", day)
+			os.Exit(1)
+		}
+		for d := start; d <= end; d++ {
+			days = append(days, fmt.Sprintf("%02d", d))
+		}
+		return days
+	}
+	// Single day
+	if d, err := strconv.Atoi(day); err == nil && d >= 1 && d <= 31 {
+		days = append(days, fmt.Sprintf("%02d", d))
+		return days
+	}
+	fmt.Fprintf(os.Stderr, "Invalid day format: %s\n", day)
+	os.Exit(1)
+	return nil
 }
 
 func parseParquetFiles() {
@@ -154,6 +191,9 @@ func parseParquetFiles() {
 	}
 	fmt.Printf("\nFound %d domain names\n", count)
 }
+
+// --- aria2/RPC, worker, and other helper functions here ---
+// These functions are assumed to be unchanged from your original implementation.
 
 // pollDownloadCompletion checks a GID until its status is "complete", "error" or "removed"
 func pollDownloadCompletion(rpcAddr, token, gid string) error {
@@ -372,7 +412,8 @@ func main() {
 	source := flag.String("src", "", "Source for the data (options: alexa, umbrella, tranco, radar, majestic, crux)")
 	year := flag.String("y", "2025", "Year for the data")
 	month := flag.String("m", "03", "Month for the data")
-	day := flag.String("d", "", "Day for the data (optional; start downloading from this day onward)")
+	day := flag.String("d", "", "Day for the data: single (e.g. 14) or range (e.g. 01-20)")
+	country := flag.String("c", "", "Country code for crux source (e.g. 'global', 'us', 'gb', ...)")
 	parse := flag.Bool("parse", false, "Parse all Parquet files in the current directory and print domain names in response_name column")
 	ariaBinary := flag.String("aria-binary", "aria2c", "Path to aria2c binary")
 	rpcAddr := flag.String("rpc", "http://127.0.0.1:6800/jsonrpc", "aria2c RPC server address")
@@ -389,16 +430,6 @@ func main() {
 		printHelp()
 	}
 
-	// Set up signals and shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigChan
-		shutdownServer()
-		os.Exit(0)
-	}()
-	defer shutdownServer()
-
 	validSources := map[string]bool{
 		"alexa":    true,
 		"umbrella": true,
@@ -411,8 +442,78 @@ func main() {
 		fmt.Printf("Invalid source: %s\n", *source)
 		printHelp()
 	}
+	if *source == "crux" && *country == "" {
+		fmt.Println("Country code (-c) is required for source=crux")
+		printHelp()
+	}
 
-	// Aria2c: connect or start
+	allUrls := []string{}
+	days := parseDayRange(*day)
+
+	if *source == "crux" {
+		baseListURL := "https://openintel.nl/download/forward-dns/basis%3Dtoplist/source%3Dcrux"
+		dirRoot := fmt.Sprintf("%s/country-code%%3D%s/year%%3D%s/month%%3D%s/", baseListURL, *country, *year, *month)
+		parquetPattern := `https:\/\/object\.openintel\.nl\/openintel-public\/fdns\/basis=toplist\/source=crux\/country-code=` +
+			regexp.QuoteMeta(*country) +
+			`\/year=` + regexp.QuoteMeta(*year) +
+			`\/month=` + regexp.QuoteMeta(*month) +
+			`\/day=[0-9]{2}\/part-[^"]+\.parquet`
+		for _, d := range days {
+			dayDir := dirRoot + "day%3D" + d + "/"
+			content, err := fetchURL(dayDir)
+			if err != nil {
+				continue
+			}
+			urls := extractURLs(content, parquetPattern)
+			allUrls = append(allUrls, urls...)
+		}
+		log.Printf("Found %d URLs to download for crux/country-code=%s", len(allUrls), *country)
+	} else {
+		baseURL := "https://openintel.nl"
+		yearPattern := fmt.Sprintf(`/download/forward-dns/basis=toplist/source=%s/.*[0-9]`, *source)
+		monthPattern := fmt.Sprintf(`/download/forward-dns/basis=toplist/source=%s/year=%s/month=%s`, *source, *year, *month)
+		parquetPattern := `https:\/\/o.*parquet`
+		allYearContent, err := fetchURL(baseURL + "/download/forward-dns/basis=toplist/source=" + *source + "/")
+		if err != nil {
+			fmt.Println("Error fetching year URLs:", err)
+			return
+		}
+		allYearRelativeURLs := extractURLs(allYearContent, yearPattern)
+		for _, yearURL := range allYearRelativeURLs {
+			allMonthContent, err := fetchURL(baseURL + yearURL)
+			if err != nil {
+				fmt.Println("Error fetching month URLs:", err)
+				continue
+			}
+			allMonthRelativeURLs := extractURLs(allMonthContent, monthPattern)
+			for range allMonthRelativeURLs {
+				for _, d := range days {
+					dayPattern := fmt.Sprintf(`/download/forward-dns/basis=toplist/source=%s/year=%s/month=%s/day=%s`, *source, *year, *month, d)
+					allDayRelativeURLs := extractURLs(allMonthContent, dayPattern)
+					for _, dayURL := range allDayRelativeURLs {
+						parquetContent, err := fetchURL(baseURL + dayURL)
+						if err != nil {
+							fmt.Println("Error fetching parquet URLs:", err)
+							continue
+						}
+						parquetURLs := extractURLs(parquetContent, parquetPattern)
+						allUrls = append(allUrls, parquetURLs...)
+					}
+				}
+			}
+		}
+		log.Printf("Found %d URLs to download", len(allUrls))
+	}
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		shutdownServer()
+		os.Exit(0)
+	}()
+	defer shutdownServer()
+
 	ok := checkServer(*rpcAddr, *rpcToken)
 	if !ok {
 		addr, proc, err := startAria2Server(*ariaBinary, *rpcToken, *downloadDir, *rpcAddr)
@@ -426,71 +527,6 @@ func main() {
 	}
 	log.Printf("Connected to aria2c RPC server at %s", *rpcAddr)
 
-	baseURL := "https://openintel.nl"
-	yearPattern := fmt.Sprintf(`/download/forward-dns/basis=toplist/source=%s/.*[0-9]`, *source)
-	monthPattern := fmt.Sprintf(`/download/forward-dns/basis=toplist/source=%s/year=%s/month=%s`, *source, *year, *month)
-	parquetPattern := `https:\/\/o.*parquet`
-
-	allYearContent, err := fetchURL(baseURL + "/download/forward-dns/basis=toplist/source=" + *source + "/")
-	if err != nil {
-		fmt.Println("Error fetching year URLs:", err)
-		return
-	}
-	allYearRelativeURLs := extractURLs(allYearContent, yearPattern)
-
-	allUrls := []string{}
-	for _, yearURL := range allYearRelativeURLs {
-		allMonthContent, err := fetchURL(baseURL + yearURL)
-		if err != nil {
-			fmt.Println("Error fetching month URLs:", err)
-			continue
-		}
-		allMonthRelativeURLs := extractURLs(allMonthContent, monthPattern)
-		for _, monthURL := range allMonthRelativeURLs {
-			if *day != "" {
-				allDayContent, err := fetchURL(baseURL + monthURL)
-				if err != nil {
-					fmt.Println("Error fetching day URLs:", err)
-					continue
-				}
-				dayPattern := fmt.Sprintf(`/download/forward-dns/basis=toplist/source=%s/year=%s/month=%s/day=([0-9]{2})`, *source, *year, *month)
-				allDayRelativeURLs := extractURLs(allDayContent, dayPattern)
-				for _, dayURL := range allDayRelativeURLs {
-					// Extract NN from /day=NN
-					idx := strings.Index(dayURL, "/day=")
-					if idx == -1 || len(dayURL) < idx+7 {
-						continue
-					}
-					fileDayStr := dayURL[idx+5 : idx+7]
-					fileDay := 0
-					userDay := 0
-					fmt.Sscanf(fileDayStr, "%02d", &fileDay)
-					fmt.Sscanf(*day, "%02d", &userDay)
-					if fileDay < userDay {
-						continue
-					}
-					parquetContent, err := fetchURL(baseURL + dayURL)
-					if err != nil {
-						fmt.Println("Error fetching parquet URLs:", err)
-						continue
-					}
-					parquetURLs := extractURLs(parquetContent, parquetPattern)
-					allUrls = append(allUrls, parquetURLs...)
-				}
-			} else {
-				parquetContent, err := fetchURL(baseURL + monthURL)
-				if err != nil {
-					fmt.Println("Error fetching parquet URLs for month:", err)
-					continue
-				}
-				parquetURLs := extractURLs(parquetContent, parquetPattern)
-				allUrls = append(allUrls, parquetURLs...)
-			}
-		}
-	}
-	log.Printf("Found %d URLs to download", len(allUrls))
-
-	// Limit concurrency: only 4 workers, each does not add a new download until their previous finished
 	queue := make(chan string, len(allUrls))
 	wg := &sync.WaitGroup{}
 	for w := 0; w < maxConcurrentDownloads; w++ {
