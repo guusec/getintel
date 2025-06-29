@@ -10,6 +10,7 @@ _arguments -s \
   '-aria-binary[Path to aria2c binary (for download mode)]:path:_files' \
   '-rpc[aria2c RPC server address]:string:' \
   '-token[aria2c RPC token]:string:' \
+  '-l[List all generated URLs]' \
   '-dir[Download directory (for aria2c)]:directory:_files -/' \
   '*::filename:_files'
 
