@@ -1,13 +1,15 @@
-#compdef getintel
+compdef getintel
 
 _arguments -s \
   '-src[Source for the data (options: alexa, umbrella, tranco, radar, majestic, crux)]:source:(alexa umbrella tranco radar majestic crux)' \
   '-y[Year for the data]:year:_values "year" $(seq 2010 2030)' \
   '-m[Month for the data]:month:((01\:January 02\:February 03\:March 04\:April 05\:May 06\:June 07\:July 08\:August 09\:September 10\:October 11\:November 12\:December))' \
   '-d[Day for the data]:day:_values "day" $(seq -w 01 31)' \
+  '-c[Country code for crux source (e.g. global, us, gb, ca, ...); required for crux]:country code:(global us gb ca de fr nl jp au br)' \
   '-parse[Parse all Parquet files in the current directory and print domain names in response_name column]' \
   '-aria-binary[Path to aria2c binary (for download mode)]:path:_files' \
   '-rpc[aria2c RPC server address]:string:' \
   '-token[aria2c RPC token]:string:' \
   '-dir[Download directory (for aria2c)]:directory:_files -/' \
   '*::filename:_files'
+
