@@ -88,9 +88,9 @@ func printHelp() {
 	fmt.Println("  -src string")
 	fmt.Println("        Source for the data (options: alexa, umbrella, tranco, radar, majestic, crux)")
 	fmt.Println("  -y string")
-	fmt.Println("        Year for the data (default is 2025)")
+	fmt.Println("        Year for the data (default is 2025). Supports single year (2024), or range (2023-2025)")
 	fmt.Println("  -m string")
-	fmt.Println("        Month for the data (default is 03)")
+	fmt.Println("        Month for the data (default is 03). Supports single month (02), or range (01-04)")
 	fmt.Println("  -d string")
 	fmt.Println("        Day for the data: single (e.g. 14) or range (e.g. 01-20)")
 	fmt.Println("  -c string")
@@ -113,6 +113,7 @@ func printHelp() {
 	fmt.Println("  getintel -src=umbrella -y=2025 -m=03 -d=01-10")
 	fmt.Println("  getintel -src=crux -y=2025 -m=06 -d=27 -c=global")
 	fmt.Println("  getintel -src=crux -y=2025 -m=06 -d=10-15 -c=global")
+	fmt.Println("  getintel -src=tranco -y=2024-2025 -m=01-03 -d=14")
 	fmt.Println("  getintel -parse")
 	os.Exit(0)
 }
@@ -144,6 +145,60 @@ func parseDayRange(day string) []string {
 		return days
 	}
 	fmt.Fprintf(os.Stderr, "Invalid day format: %s\n", day)
+	os.Exit(1)
+	return nil
+}
+
+func parseYearRange(yr string) []string {
+	var years []string
+	if yr == "" {
+		years = append(years, "2025")
+		return years
+	}
+	if strings.Contains(yr, "-") {
+		parts := strings.SplitN(yr, "-", 2)
+		start, err1 := strconv.Atoi(parts[0])
+		end, err2 := strconv.Atoi(parts[1])
+		if err1 != nil || err2 != nil || start > end {
+			fmt.Fprintf(os.Stderr, "Invalid year range: %s\n", yr)
+			os.Exit(1)
+		}
+		for y := start; y <= end; y++ {
+			years = append(years, fmt.Sprintf("%04d", y))
+		}
+		return years
+	}
+	years = append(years, yr)
+	return years
+}
+
+func parseMonthRange(m string) []string {
+	var months []string
+	if m == "" {
+		for mm := 1; mm <= 12; mm++ {
+			months = append(months, fmt.Sprintf("%02d", mm))
+		}
+		return months
+	}
+	if strings.Contains(m, "-") {
+		parts := strings.SplitN(m, "-", 2)
+		start, err1 := strconv.Atoi(parts[0])
+		end, err2 := strconv.Atoi(parts[1])
+		if err1 != nil || err2 != nil || start < 1 || end > 12 || start > end {
+			fmt.Fprintf(os.Stderr, "Invalid month range: %s\n", m)
+			os.Exit(1)
+		}
+		for mm := start; mm <= end; mm++ {
+			months = append(months, fmt.Sprintf("%02d", mm))
+		}
+		return months
+	}
+	// Single month
+	if mm, err := strconv.Atoi(m); err == nil && mm >= 1 && mm <= 12 {
+		months = append(months, fmt.Sprintf("%02d", mm))
+		return months
+	}
+	fmt.Fprintf(os.Stderr, "Invalid month format: %s\n", m)
 	os.Exit(1)
 	return nil
 }
@@ -195,8 +250,6 @@ func parseParquetFiles() {
 }
 
 // --- aria2/RPC, worker, and other helper functions here ---
-// These functions are assumed to be unchanged from your original implementation.
-
 func pollDownloadCompletion(rpcAddr, token, gid string) error {
 	for {
 		status, err := getDownloadStatus(rpcAddr, token, gid)
@@ -449,48 +502,45 @@ func main() {
 		printHelp()
 	}
 
-	allUrls := []string{}
+	years := parseYearRange(*year)
+	months := parseMonthRange(*month)
 	days := parseDayRange(*day)
+	allUrls := []string{}
 
 	if *source == "crux" {
-		baseListURL := "https://openintel.nl/download/forward-dns/basis%3Dtoplist/source%3Dcrux"
-		dirRoot := fmt.Sprintf("%s/country-code%%3D%s/year%%3D%s/month%%3D%s/", baseListURL, *country, *year, *month)
-		parquetPattern := `https:\/\/object\.openintel\.nl\/openintel-public\/fdns\/basis=toplist\/source=crux\/country-code=` +
-			regexp.QuoteMeta(*country) +
-			`\/year=` + regexp.QuoteMeta(*year) +
-			`\/month=` + regexp.QuoteMeta(*month) +
-			`\/day=[0-9]{2}\/part-[^"]+\.parquet`
-		for _, d := range days {
-			dayDir := dirRoot + "day%3D" + d + "/"
-			content, err := fetchURL(dayDir)
-			if err != nil {
-				continue
+		for _, y := range years {
+			for _, m := range months {
+				baseListURL := "https://openintel.nl/download/forward-dns/basis%3Dtoplist/source%3Dcrux"
+				dirRoot := fmt.Sprintf("%s/country-code%%3D%s/year%%3D%s/month%%3D%s/", baseListURL, *country, y, m)
+				parquetPattern := `https:\/\/object\.openintel\.nl\/openintel-public\/fdns\/basis=toplist\/source=crux\/country-code=` +
+					regexp.QuoteMeta(*country) +
+					`\/year=` + regexp.QuoteMeta(y) +
+					`\/month=` + regexp.QuoteMeta(m) +
+					`\/day=[0-9]{2}\/part-[^"]+\.parquet`
+				for _, d := range days {
+					dayDir := dirRoot + "day%3D" + d + "/"
+					content, err := fetchURL(dayDir)
+					if err != nil {
+						continue
+					}
+					urls := extractURLs(content, parquetPattern)
+					allUrls = append(allUrls, urls...)
+				}
 			}
-			urls := extractURLs(content, parquetPattern)
-			allUrls = append(allUrls, urls...)
 		}
 		log.Printf("Found %d URLs to download for crux/country-code=%s", len(allUrls), *country)
 	} else {
 		baseURL := "https://openintel.nl"
-		yearPattern := fmt.Sprintf(`/download/forward-dns/basis=toplist/source=%s/.*[0-9]`, *source)
-		monthPattern := fmt.Sprintf(`/download/forward-dns/basis=toplist/source=%s/year=%s/month=%s`, *source, *year, *month)
-		parquetPattern := `https:\/\/o.*parquet`
-		allYearContent, err := fetchURL(baseURL + "/download/forward-dns/basis=toplist/source=" + *source + "/")
-		if err != nil {
-			fmt.Println("Error fetching year URLs:", err)
-			return
-		}
-		allYearRelativeURLs := extractURLs(allYearContent, yearPattern)
-		for _, yearURL := range allYearRelativeURLs {
-			allMonthContent, err := fetchURL(baseURL + yearURL)
-			if err != nil {
-				fmt.Println("Error fetching month URLs:", err)
-				continue
-			}
-			allMonthRelativeURLs := extractURLs(allMonthContent, monthPattern)
-			for range allMonthRelativeURLs {
+		for _, y := range years {
+			for _, m := range months {
+				monthRelPath := fmt.Sprintf("/download/forward-dns/basis=toplist/source=%s/year=%s/month=%s", *source, y, m)
+				allMonthContent, err := fetchURL(baseURL + monthRelPath)
+				if err != nil {
+					fmt.Println("Error fetching month URLs:", err)
+					continue
+				}
 				for _, d := range days {
-					dayPattern := fmt.Sprintf(`/download/forward-dns/basis=toplist/source=%s/year=%s/month=%s/day=%s`, *source, *year, *month, d)
+					dayPattern := fmt.Sprintf(`/download/forward-dns/basis=toplist/source=%s/year=%s/month=%s/day=%s`, *source, y, m, d)
 					allDayRelativeURLs := extractURLs(allMonthContent, dayPattern)
 					for _, dayURL := range allDayRelativeURLs {
 						parquetContent, err := fetchURL(baseURL + dayURL)
@@ -498,6 +548,7 @@ func main() {
 							fmt.Println("Error fetching parquet URLs:", err)
 							continue
 						}
+						parquetPattern := `https:\/\/o.*parquet`
 						parquetURLs := extractURLs(parquetContent, parquetPattern)
 						allUrls = append(allUrls, parquetURLs...)
 					}
