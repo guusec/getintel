@@ -212,41 +212,44 @@ func parseParquetFiles() {
 		fmt.Println("No Parquet files found in current directory")
 		return
 	}
-	quotedFiles := make([]string, len(files))
-	for i, f := range files {
-		quotedFiles[i] = fmt.Sprintf("'%s'", strings.ReplaceAll(f, "'", "''"))
-	}
-	fileList := strings.Join(quotedFiles, ", ")
-	db, err := sql.Open("duckdb", "")
-	if err != nil {
-		log.Fatalf("Failed to open database: %v", err)
-	}
-	defer db.Close()
-	query := fmt.Sprintf(`
-		SELECT response_name
-		FROM read_parquet([%s])
-		WHERE response_name IS NOT NULL
-	`, fileList)
-	rows, err := db.Query(query)
-	if err != nil {
-		log.Fatalf("Query failed: %v", err)
-	}
-	defer rows.Close()
-	fmt.Println("Domain names found in Parquet files:")
-	var domain string
-	count := 0
-	for rows.Next() {
-		if err := rows.Scan(&domain); err != nil {
-			log.Printf("Error scanning row: %v", err)
+	totalCount := 0
+	for _, f := range files {
+		// fmt.Printf("Processing: %s\n", f)
+		db, err := sql.Open("duckdb", "")
+		if err != nil {
+			log.Printf("Failed to open DuckDB for file %s: %v", f, err)
 			continue
 		}
-		fmt.Println(domain)
-		count++
+		query := fmt.Sprintf(`
+			SELECT DISTINCT response_name
+			FROM read_parquet('%s')
+			WHERE response_name IS NOT NULL
+		`, strings.ReplaceAll(f, "'", "''"))
+		rows, err := db.Query(query)
+		if err != nil {
+			log.Printf("Query failed for file %s: %v", f, err)
+			db.Close()
+			continue
+		}
+		var domain string
+		count := 0
+		for rows.Next() {
+			if err := rows.Scan(&domain); err != nil {
+				log.Printf("Error scanning row in %s: %v", f, err)
+				continue
+			}
+			fmt.Println(domain)
+			totalCount++
+			count++
+		}
+		if err := rows.Err(); err != nil {
+			log.Printf("Error reading rows from %s: %v", f, err)
+		}
+		rows.Close()
+		db.Close()
+		// fmt.Printf("  -> %d unique domains in %s\n", count, f)
 	}
-	if err := rows.Err(); err != nil {
-		log.Fatalf("Error reading rows: %v", err)
-	}
-	fmt.Printf("\nFound %d domain names\n", count)
+	// fmt.Printf("\nFound %d unique domain names in total (across all files).\n", totalCount)
 }
 
 // --- aria2/RPC, worker, and other helper functions here ---
