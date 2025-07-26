@@ -1,14 +1,24 @@
-compdef getintel
+#compdef getintel
 
-_arguments -s \
-  '-src[Source for the data (options: alexa, umbrella, tranco, radar, majestic, crux)]:source:(alexa umbrella tranco radar majestic crux)' \
-  '-y[Year(s) for the data. Accepts a single year (e.g. 2022) or a range (e.g. 2020-2022)]:year(s):_values "year/range" $(seq 2010 2030){,-$(seq 2010 2030)}' \
-  '-m[Month(s) for the data. Accepts a single month (e.g. 03) or a range (e.g. 01-04)]:month(s):_values "month/range" {01..12}{,-{01..12}}' \
-  '-d[Day for the data: single (e.g. 14) or range (e.g. 01-20)]:day:_values "day" $(seq -w 01 31)' \
-  '-c[Country code for crux source (e.g. global, us, gb, ca, ...); required for crux]:country code:(global us gb ca de fr nl jp au br)' \
-  '-parse[Parse all Parquet files in the current directory and print domain names in response_name column]' \
-  '-aria-binary[Path to aria2c binary (for download mode)]:path:_files' \
-  '-rpc[aria2c RPC server address]:string:' \
-  '-token[aria2c RPC token]:string:' \
-  '-dir[Download directory (for aria2c)]:directory:_files -/' \
-  '*::filename:_files'
+_getintel() {
+    local context state line
+    typeset -A opt_args
+
+    _arguments -C \
+        '-aria-binary[Path to aria2c binary]:aria2c path:_files' \
+        '-c[Country code for crux source]:country code:(global us gb ca au de fr jp cn in br mx ru)' \
+        '-d[Day for the data - single or range]:day:' \
+        '-dir[Download directory]:directory:_directories' \
+        '-l[List all generated download URLs instead of downloading]' \
+        '-m[Month for the data]:month:(01 02 03 04 05 06 07 08 09 10 11 12)' \
+        '-parse[Parse all Parquet files in current directory and print domain names]' \
+        '-rpc[aria2c RPC server address]:rpc address:' \
+        '-src[Source for the data]:source:(alexa umbrella tranco radar majestic crux)' \
+        '-token[aria2c RPC token]:token:' \
+        '-y[Year for the data]:year:' \
+        && return 0
+
+    return 1
+}
+
+_getintel "$@"
