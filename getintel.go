@@ -94,9 +94,9 @@ func printHelp() {
 	fmt.Println("  -d string")
 	fmt.Println("        Day for the data: single (e.g. 14) or range (e.g. 01-20)")
 	fmt.Println("  -c string")
-	fmt.Println("        Country code for crux source (e.g. 'global', 'us', 'gb', 'ca', ...)")
+	fmt.Println("        Column name for parsing (default: 'response_name') OR country code for crux source (e.g. 'global', 'us', 'gb', 'ca', ...)")
 	fmt.Println("  -parse")
-	fmt.Println("        Parse all Parquet files in the current directory and print domain names in response_name column")
+	fmt.Println("        Parse all Parquet files in the current directory and print values from specified column (default: response_name)")
 	fmt.Println("  -aria-binary string")
 	fmt.Println("        Path to aria2c binary (for download mode) (default 'aria2c')")
 	fmt.Println("  -rpc string")
@@ -115,6 +115,7 @@ func printHelp() {
 	fmt.Println("  getintel -src=crux -y=2025 -m=06 -d=10-15 -c=global")
 	fmt.Println("  getintel -src=tranco -y=2024-2025 -m=01-03 -d=14")
 	fmt.Println("  getintel -parse")
+	fmt.Println("  getintel -parse -c domain")
 	os.Exit(0)
 }
 
@@ -203,7 +204,10 @@ func parseMonthRange(m string) []string {
 	return nil
 }
 
-func parseParquetFiles() {
+func parseParquetFiles(columnName string) {
+	if columnName == "" {
+		columnName = "response_name"
+	}
 	files, err := filepath.Glob("*.parquet")
 	if err != nil {
 		log.Fatalf("Error finding Parquet files: %v", err)
@@ -221,24 +225,24 @@ func parseParquetFiles() {
 			continue
 		}
 		query := fmt.Sprintf(`
-			SELECT DISTINCT response_name
+			SELECT DISTINCT %s
 			FROM read_parquet('%s')
-			WHERE response_name IS NOT NULL
-		`, strings.ReplaceAll(f, "'", "''"))
+			WHERE %s IS NOT NULL
+		`, columnName, strings.ReplaceAll(f, "'", "''"), columnName)
 		rows, err := db.Query(query)
 		if err != nil {
 			log.Printf("Query failed for file %s: %v", f, err)
 			db.Close()
 			continue
 		}
-		var domain string
+		var value string
 		count := 0
 		for rows.Next() {
-			if err := rows.Scan(&domain); err != nil {
+			if err := rows.Scan(&value); err != nil {
 				log.Printf("Error scanning row in %s: %v", f, err)
 				continue
 			}
-			fmt.Println(domain)
+			fmt.Println(value)
 			totalCount++
 			count++
 		}
@@ -247,9 +251,9 @@ func parseParquetFiles() {
 		}
 		rows.Close()
 		db.Close()
-		// fmt.Printf("  -> %d unique domains in %s\n", count, f)
+		// fmt.Printf("  -> %d unique values in %s\n", count, f)
 	}
-	// fmt.Printf("\nFound %d unique domain names in total (across all files).\n", totalCount)
+	// fmt.Printf("\nFound %d unique values in total (across all files).\n", totalCount)
 }
 
 // --- aria2/RPC, worker, and other helper functions here ---
@@ -481,7 +485,7 @@ func main() {
 	flag.Parse()
 
 	if *parse {
-		parseParquetFiles()
+		parseParquetFiles(*country)
 		return
 	}
 	if *source == "" {
